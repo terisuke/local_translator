@@ -48,4 +48,12 @@ htmlcov/
 
 # 一時ファイル
 tmp/
-temp/ 
+temp/
+
+# サードパーティライブラリのソースコード
+src/core/snakers4_silero-vad_master/
+src/core/snakers4_silero-vad/
+src/core/silero-vad/
+
+# モデルファイルとロックファイル
+models/ 
