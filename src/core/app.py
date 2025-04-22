@@ -6,7 +6,13 @@ import time
 from datetime import datetime
 import os
 import logging
-import tkinter as tk
+
+try:
+    import tkinter as tk
+    HAS_TKINTER = True
+except ImportError:
+    HAS_TKINTER = False
+    tk = None
 
 from .audio_processor import AudioProcessor
 from .vad import VAD
@@ -74,7 +80,7 @@ class TranslatorApp:
         """コールバック関数を安全に呼び出す"""
         try:
             self.logger.debug(f"コールバック呼び出し: {callback.__name__}, 引数: {args}, {kwargs}")
-            if self.root and callback:
+            if HAS_TKINTER and self.root and callback:
                 # GUIのルートウィンドウを使ってメインスレッドからコールバックを実行
                 self.logger.debug(f"ルートウィンドウを使ってコールバックを実行")
                 self.root.after(0, lambda: callback(*args, **kwargs))
@@ -223,4 +229,4 @@ class TranslatorApp:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()  
+        self.stop()      
