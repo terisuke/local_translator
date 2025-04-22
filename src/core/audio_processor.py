@@ -21,12 +21,20 @@ class AudioProcessor:
         self.is_running = False
         self.stream = None
         self.thread = None
+        self.buffer = np.array([], dtype=np.float32)
 
     def audio_callback(self, indata: np.ndarray, frames: int, time, status):
         """音声ストリームのコールバック関数"""
         if status:
             print(f"音声入力エラー: {status}")
-        self.audio_queue.put(indata.copy())
+        
+        # 音声データをバッファに追加
+        self.buffer = np.concatenate([self.buffer, indata.flatten()])
+        
+        # バッファサイズが一定以上になったら処理
+        if len(self.buffer) >= self.chunk_size * 4:
+            self.audio_queue.put(self.buffer.copy())
+            self.buffer = np.array([], dtype=np.float32)
 
     def process_audio(self):
         """音声データの処理ループ"""

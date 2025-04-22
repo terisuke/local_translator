@@ -5,6 +5,8 @@ import queue
 import time
 from datetime import datetime
 import os
+import logging
+import tkinter as tk
 
 from .audio_processor import AudioProcessor
 from .vad import VAD
@@ -28,6 +30,10 @@ class TranslatorApp:
             compute_type: 計算精度
             log_dir: ログ保存ディレクトリ
         """
+        # ロギングの設定
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+        
         self.device = device
         self.model_size = model_size
         self.compute_type = compute_type
@@ -56,6 +62,24 @@ class TranslatorApp:
         # コールバック
         self.on_text: Optional[Callable[[str, str], None]] = None
         self.on_translation: Optional[Callable[[str, str], None]] = None
+        
+        # GUIのルートウィンドウ
+        self.root: Optional[tk.Tk] = None
+
+    def set_root(self, root: tk.Tk):
+        """GUIのルートウィンドウを設定"""
+        self.root = root
+
+    def call_callback(self, callback: Callable, *args, **kwargs):
+        """コールバック関数を安全に呼び出す"""
+        try:
+            self.logger.debug(f"コールバック呼び出し: {callback.__name__}, 引数: {args}, {kwargs}")
+            if self.root:
+                self.root.after(0, lambda: callback(*args, **kwargs))
+            else:
+                callback(*args, **kwargs)
+        except Exception as e:
+            self.logger.error(f"コールバックの呼び出しに失敗: {e}")
 
     def process_audio(self, audio_data: np.ndarray):
         """
@@ -64,28 +88,56 @@ class TranslatorApp:
         Args:
             audio_data: 音声データ
         """
-        # VADによる音声検出
-        processed_audio, is_speech = self.vad.process_audio(audio_data)
-        
-        if is_speech:
-            # ASRによる音声認識
-            text, info = self.asr.transcribe_stream(processed_audio)
+        try:
+            # バッファサイズを調整（0.5秒分のデータ）
+            buffer_size = int(16000 * 0.5)  # サンプリングレート * 秒数
+            if len(audio_data) < buffer_size:
+                return
             
-            if text.strip():
-                # テキストキューに追加
-                self.text_queue.put((text, info["language"]))
+            # 音声データの正規化
+            audio_data = audio_data.astype(np.float32)
+            if np.abs(audio_data).max() > 0:
+                audio_data = audio_data / np.abs(audio_data).max()
+            
+            # VADによる音声検出
+            self.logger.debug(f"VAD処理開始: audio_data shape={audio_data.shape}")
+            processed_audio, is_speech = self.vad.process_audio(audio_data)
+            self.logger.debug(f"VAD処理結果: is_speech={is_speech}")
+            
+            if is_speech:
+                self.logger.info("音声を検出しました")
+                # ASRによる音声認識
+                self.logger.debug("音声認識開始")
+                text, info = self.asr.transcribe_stream(processed_audio)
+                self.logger.debug(f"音声認識結果: text='{text}', info={info}")
                 
-                # コールバック呼び出し
-                if self.on_text:
-                    self.on_text(text, info["language"])
+                if text.strip():
+                    self.logger.info(f"認識結果: {text}")
+                    # テキストキューに追加
+                    self.text_queue.put((text, info["language"]))
+                    
+                    # コールバック呼び出し
+                    if self.on_text:
+                        self.logger.debug(f"on_textコールバックを呼び出し: text='{text}', lang={info['language']}")
+                        self.call_callback(self.on_text, text, info["language"])
+                    else:
+                        self.logger.warning("on_textコールバックが設定されていません")
+                else:
+                    self.logger.debug("認識テキストが空のため処理をスキップ")
+            else:
+                self.logger.debug("音声が検出されませんでした")
+        except Exception as e:
+            self.logger.error(f"音声処理中にエラーが発生しました: {e}")
 
     def process_text(self):
         """
         テキスト処理ループ
         """
+        self.logger.info("テキスト処理スレッドを開始します")
         while self.is_running:
             try:
                 text, source_lang = self.text_queue.get(timeout=1.0)
+                self.logger.info(f"翻訳を開始します: {text}")
                 
                 # 翻訳の実行
                 translated, src, tgt = self.translator.translate(
@@ -93,18 +145,22 @@ class TranslatorApp:
                     source_lang=source_lang
                 )
                 
+                self.logger.info(f"翻訳結果: {translated}")
+                
                 # 翻訳キューに追加
                 self.translation_queue.put((translated, tgt))
                 
                 # コールバック呼び出し
                 if self.on_translation:
-                    self.on_translation(translated, tgt)
+                    self.call_callback(self.on_translation, translated, tgt)
                     
                 # ログの保存
                 self.save_log(text, translated, src, tgt)
                 
             except queue.Empty:
                 continue
+            except Exception as e:
+                self.logger.error(f"テキスト処理中にエラーが発生しました: {e}")
 
     def save_log(self, text: str, translated: str, src: str, tgt: str):
         """
@@ -131,16 +187,21 @@ class TranslatorApp:
             return
             
         self.is_running = True
+        self.logger.info("アプリケーションを開始します")
         
         # 音声処理の開始
         self.audio_processor.start()
         
         # テキスト処理スレッドの開始
-        self.text_thread = threading.Thread(target=self.process_text)
+        self.text_thread = threading.Thread(target=self.process_text, daemon=True)
         self.text_thread.start()
 
     def stop(self):
         """アプリケーションの停止"""
+        if not self.is_running:
+            return
+            
+        self.logger.info("アプリケーションを停止します")
         self.is_running = False
         
         # 音声処理の停止
@@ -148,7 +209,7 @@ class TranslatorApp:
         
         # テキスト処理スレッドの停止
         if hasattr(self, "text_thread"):
-            self.text_thread.join()
+            self.text_thread.join(timeout=5.0)
             
         # キューのクリア
         self.text_queue.queue.clear()
