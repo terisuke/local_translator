@@ -1,4 +1,3 @@
-import tkinter as tk
 import argparse
 import sys
 import os
@@ -6,7 +5,12 @@ import os
 # パスの設定
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from gui.main_window import MainWindow
+try:
+    import tkinter as tk
+    from gui.main_window import MainWindow
+    HAS_TKINTER = True
+except ImportError:
+    HAS_TKINTER = False
 
 def main():
     """メインエントリーポイント"""
@@ -15,7 +19,7 @@ def main():
     parser.add_argument("--cli", action="store_true", help="CLIモードで起動")
     args = parser.parse_args()
     
-    if args.cli:
+    if args.cli or not HAS_TKINTER:
         # CLIモード
         from core.app import TranslatorApp
         
@@ -31,11 +35,14 @@ def main():
         except KeyboardInterrupt:
             print("\n翻訳を終了します。")
             app.stop()
-    else:
+    elif HAS_TKINTER:
         # GUIモード
         root = tk.Tk()
         app = MainWindow(root)
         root.mainloop()
+    else:
+        print("tkinterが利用できないため、GUIモードを起動できません。--cliオプションを使用してください。")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    main()    
