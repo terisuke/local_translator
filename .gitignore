@@ -1,0 +1,51 @@
+# Python仮想環境
+.venv/
+venv/
+ENV/
+
+# Pythonバイトコード
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 配布用パッケージ
+dist/
+build/
+*.egg-info/
+
+# ログファイル
+logs/
+*.log
+
+# 設定ファイル
+config.json
+
+# モデルファイル
+*.onnx
+*.pt
+*.pth
+*.bin
+*.model
+
+# キャッシュディレクトリ
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# エディタ設定
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS固有のファイル
+.DS_Store
+Thumbs.db
+
+# テストカバレッジ
+.coverage
+htmlcov/
+
+# 一時ファイル
+tmp/
+temp/ 
