@@ -74,9 +74,12 @@ class TranslatorApp:
         """コールバック関数を安全に呼び出す"""
         try:
             self.logger.debug(f"コールバック呼び出し: {callback.__name__}, 引数: {args}, {kwargs}")
-            if self.root:
+            if self.root and callback:
+                # GUIのルートウィンドウを使ってメインスレッドからコールバックを実行
+                self.logger.debug(f"ルートウィンドウを使ってコールバックを実行")
                 self.root.after(0, lambda: callback(*args, **kwargs))
-            else:
+            elif callback:
+                self.logger.debug(f"直接コールバックを実行")
                 callback(*args, **kwargs)
         except Exception as e:
             self.logger.error(f"コールバックの呼び出しに失敗: {e}")
@@ -220,4 +223,4 @@ class TranslatorApp:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop() 
+        self.stop()  

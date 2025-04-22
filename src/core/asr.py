@@ -95,7 +95,7 @@ class ASR:
             # 音声認識の実行
             segments, info = self.model.transcribe(
                 audio_data,
-                language=self.language or "en",
+                language=self.language or None,  # Noneに変更して自動言語検出を有効化
                 beam_size=5,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 300}
@@ -107,4 +107,4 @@ class ASR:
             
         except Exception as e:
             self.logger.error(f"音声認識中にエラーが発生: {e}")
-            return "", {"language": "en", "language_probability": 0.0} 
+            return "", {"language": "en", "language_probability": 0.0}  
