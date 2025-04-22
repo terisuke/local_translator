@@ -39,7 +39,7 @@ class Translator:
         except:
             return "en"  # デフォルトは英語
 
-    def translate(self, text: str, source_lang: str) -> str:
+    def translate(self, text: str, source_lang: str):
         """
         テキストを翻訳
         
@@ -48,10 +48,12 @@ class Translator:
             source_lang: 入力言語（"en" または "ja"）
             
         Returns:
-            str: 翻訳されたテキスト
+            Tuple[str, str, str]: (翻訳されたテキスト, ソース言語, ターゲット言語)
         """
         if not text:
-            return ""
+            return "", source_lang, ""
+            
+        target_lang = "ja" if source_lang == "en" else "en"
             
         if source_lang == "en":
             # 英語→日本語
@@ -72,4 +74,4 @@ class Translator:
         # トークンのデコード
         translated = tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
         
-        return translated 
+        return translated, source_lang, target_lang   

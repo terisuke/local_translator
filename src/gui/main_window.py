@@ -122,6 +122,11 @@ class MainWindow:
         try:
             self.logger.debug(f"テキスト更新開始: widget={widget}, text={text}, lang={lang}")
             
+            if threading.current_thread() is not threading.main_thread():
+                self.logger.debug("メインスレッド以外から呼び出されたため、after()を使用")
+                self.root.after(0, lambda: self.update_text(widget, text, lang))
+                return
+                
             # 既存のテキストをクリア
             widget.delete("1.0", tk.END)
             
@@ -151,8 +156,8 @@ class MainWindow:
         """
         self.logger.debug(f"音声認識コールバック: text={text}, lang={lang}")
         try:
-            self.root.after(0, lambda: self.update_text(self.source_text, text, lang))
-            self.logger.debug("音声認識テキストの更新をスケジュール")
+            self.update_text(self.source_text, text, lang)
+            self.logger.debug("音声認識テキストの更新完了")
         except Exception as e:
             self.logger.error(f"音声認識コールバックでエラー: {e}")
 
@@ -262,4 +267,4 @@ class MainWindow:
         """設定の保存"""
         config_file = "config.json"
         with open(config_file, "w") as f:
-            json.dump(self.config, f, indent=4) 
+            json.dump(self.config, f, indent=4)    
