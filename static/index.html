@@ -24,12 +24,15 @@
             text-align: center;
         }
         .text-box {
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 15px;
-            margin: 15px 0;
-            min-height: 100px;
-            background-color: #fff;
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+            font-size: 16px;
+            line-height: 1.5;
         }
         .controls {
             display: flex;
@@ -62,12 +65,24 @@
         }
         .lang-tag {
             display: inline-block;
-            background-color: #f1f1f1;
-            padding: 2px 5px;
+            padding: 2px 6px;
             border-radius: 3px;
+            font-size: 0.8em;
             margin-right: 5px;
-            font-size: 12px;
-            color: #666;
+            background-color: #e0e0e0;
+            font-weight: bold;
+        }
+        .text-entry {
+            margin-bottom: 15px;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            background-color: #fff;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .text-content {
+            margin-top: 5px;
+            white-space: pre-wrap;
         }
     </style>
 </head>
@@ -121,12 +136,20 @@
                     // 原文を表示
                     const originalText = data.original.text;
                     const originalLang = data.original.lang;
-                    originalEl.innerHTML = `<span class="lang-tag">${originalLang}</span> ${originalText}`;
+                    originalEl.innerHTML += `<div class="text-entry">
+                        <span class="lang-tag">${originalLang}</span>
+                        <div class="text-content">${originalText}</div>
+                    </div>`;
+                    originalEl.scrollTop = originalEl.scrollHeight;
                     
                     // 翻訳を表示
                     const translatedText = data.translated.text;
                     const translatedLang = data.translated.lang;
-                    translationEl.innerHTML = `<span class="lang-tag">${translatedLang}</span> ${translatedText}`;
+                    translationEl.innerHTML += `<div class="text-entry">
+                        <span class="lang-tag">${translatedLang}</span>
+                        <div class="text-content">${translatedText}</div>
+                    </div>`;
+                    translationEl.scrollTop = translationEl.scrollHeight;
                 };
                 
                 websocket.onclose = () => {

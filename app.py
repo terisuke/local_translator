@@ -116,18 +116,19 @@ class ASRTranslationService:
         self.sample_rate = 16000
         
         # バッファ設定
-        self.min_text_length = 100  # 最小テキスト長を増加
-        self.silence_threshold = 2.0  # 無音検出の閾値（秒）
+        self.min_text_length = 50  # 最小テキスト長を調整
+        self.silence_threshold = 1.0  # 無音検出の閾値（秒）
         self.min_buffer_size = 16000 * 2  # 最小バッファサイズ（2秒）
         self.text_buffer = ""
         self.last_speech_time = 0
+        self.silence_start_time = None
         
         # 文脈管理
         self.conversation_history = []
-        self.max_history_chars = 2000  # 履歴保持文字数を増加
-        self.pending_translation = None  # 翻訳待ちのテキスト
+        self.max_history_chars = 2000
+        self.pending_translation = None
         self.last_translation_time = 0
-        self.translation_delay = 3.0  # 翻訳を待機する時間（秒）
+        self.translation_delay = 1.0  # 翻訳を待機する時間（秒）
         
         # 文章結合用の正規表現パターン
         self.sentence_end_pattern = re.compile(r'[.。!！?？]\s*')
@@ -152,9 +153,21 @@ class ASRTranslationService:
             return True
             
         # 接続詞で始まる場合は結合
-        connecting_words = {'and', 'or', 'but', 'so', 'because', 'however', 'therefore', 'then', 'also'}
+        connecting_words = {
+            'and', 'or', 'but', 'so', 'because', 'however', 'therefore', 'then', 'also',
+            'また', 'そして', 'しかし', 'だから', 'それで', 'したがって', 'そのため',
+            'さらに', 'また', 'または', 'ただし', 'なお', 'つまり', '例えば'
+        }
         first_word = current_text.split()[0].lower() if current_text.split() else ''
         if first_word in connecting_words:
+            return True
+            
+        # 前の文が短すぎる場合は結合
+        if len(previous_text.split()) < 5:
+            return True
+            
+        # 前の文が文末で終わっていない場合は結合
+        if not previous_text.rstrip().endswith(('.', '。', '!', '！', '?', '？')):
             return True
             
         return False
@@ -203,13 +216,20 @@ class ASRTranslationService:
         segments_list = list(segments)
         
         if not segments_list:
-            # 無音期間が十分長く、保留中の翻訳がある場合
-            if (current_time - self.last_speech_time > self.silence_threshold and 
-                self.pending_translation):
-                result = await self.process_buffered_text(force_translate=True)
-                self.pending_translation = None
-                return result
+            # 無音期間の検出
+            if self.silence_start_time is None:
+                self.silence_start_time = current_time
+            elif current_time - self.silence_start_time > self.silence_threshold:
+                # 無音期間が閾値を超えた場合、保留中の翻訳を処理
+                if self.pending_translation:
+                    result = await self.process_buffered_text(force_translate=True)
+                    self.pending_translation = None
+                    self.silence_start_time = None
+                    return result
             return None
+        else:
+            # 音声が検出された場合、無音開始時間をリセット
+            self.silence_start_time = None
         
         text = " ".join([segment.text for segment in segments_list])
         
@@ -238,9 +258,11 @@ class ASRTranslationService:
         # 1. テキストが十分な長さになった
         # 2. 文末記号で終わっている
         # 3. 最後の翻訳から十分な時間が経過
+        # 4. 無音期間が一定以上続いている
         if (len(self.pending_translation) >= self.min_text_length or
             self.sentence_end_pattern.search(self.pending_translation) or
-            current_time - self.last_translation_time >= self.translation_delay):
+            current_time - self.last_translation_time >= self.translation_delay or
+            (self.silence_start_time and current_time - self.silence_start_time > self.silence_threshold)):
             
             result = await self.process_buffered_text(force_translate=True)
             self.pending_translation = None
