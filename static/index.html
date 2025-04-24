@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム音声翻訳</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .text-box {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+            min-height: 100px;
+            background-color: #fff;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            text-align: center;
+            margin-top: 10px;
+            color: #666;
+            font-style: italic;
+        }
+        .lang-tag {
+            display: inline-block;
+            background-color: #f1f1f1;
+            padding: 2px 5px;
+            border-radius: 3px;
+            margin-right: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>リアルタイム音声翻訳</h1>
+        
+        <div class="controls">
+            <button id="startBtn">録音開始</button>
+            <button id="stopBtn" disabled>録音停止</button>
+        </div>
+        
+        <div class="status" id="status">準備完了</div>
+        
+        <h2>原文</h2>
+        <div id="original" class="text-box"></div>
+        
+        <h2>翻訳</h2>
+        <div id="translation" class="text-box"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            const statusEl = document.getElementById('status');
+            const originalEl = document.getElementById('original');
+            const translationEl = document.getElementById('translation');
+            
+            let audioContext;
+            let audioWorklet;
+            let microphone;
+            let websocket;
+            let isRecording = false;
+            
+            // WebSocketを初期化
+            function initWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws`;
+                
+                websocket = new WebSocket(wsUrl);
+                
+                websocket.onopen = () => {
+                    statusEl.textContent = '接続しました';
+                    startBtn.disabled = false;
+                };
+                
+                websocket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    // 原文を表示
+                    const originalText = data.original.text;
+                    const originalLang = data.original.lang;
+                    originalEl.innerHTML = `<span class="lang-tag">${originalLang}</span> ${originalText}`;
+                    
+                    // 翻訳を表示
+                    const translatedText = data.translated.text;
+                    const translatedLang = data.translated.lang;
+                    translationEl.innerHTML = `<span class="lang-tag">${translatedLang}</span> ${translatedText}`;
+                };
+                
+                websocket.onclose = () => {
+                    statusEl.textContent = '切断されました';
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                };
+                
+                websocket.onerror = (error) => {
+                    console.error('WebSocket エラー:', error);
+                    statusEl.textContent = 'エラーが発生しました';
+                };
+            }
+            
+            // 録音開始
+            async function startRecording() {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 16000
+                    });
+                    
+                    // AudioWorkletを使用（最新のWeb Audio API）
+                    await audioContext.audioWorklet.addModule('/static/audio-processor.js');
+                    
+                    // マイクからの入力を取得
+                    microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const source = audioContext.createMediaStreamSource(microphone);
+                    
+                    // AudioWorkletを接続
+                    audioWorklet = new AudioWorkletNode(audioContext, 'audio-processor');
+                    audioWorklet.port.onmessage = (event) => {
+                        if (websocket && websocket.readyState === WebSocket.OPEN) {
+                            websocket.send(event.data);
+                        }
+                    };
+                    
+                    source.connect(audioWorklet);
+                    audioWorklet.connect(audioContext.destination);
+                    
+                    isRecording = true;
+                    statusEl.textContent = '録音中...';
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    
+                } catch (err) {
+                    console.error('録音開始エラー:', err);
+                    statusEl.textContent = `エラー: ${err.message}`;
+                }
+            }
+            
+            // 録音停止
+            function stopRecording() {
+                if (microphone) {
+                    microphone.getTracks().forEach(track => track.stop());
+                }
+                
+                if (audioWorklet) {
+                    audioWorklet.disconnect();
+                }
+                
+                if (audioContext) {
+                    audioContext.close();
+                }
+                
+                isRecording = false;
+                statusEl.textContent = '停止しました';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+            
+            // ボタンイベントの設定
+            startBtn.addEventListener('click', startRecording);
+            stopBtn.addEventListener('click', stopRecording);
+            
+            // WebSocketの初期化
+            initWebSocket();
+        });
+    </script>
+</body>
+</html>
