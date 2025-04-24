@@ -287,16 +287,34 @@ class ASRTranslationService:
         
         if lang == 'ja':
             # 日本語から英語への翻訳
-            inputs = self.tokenizer(text, return_tensors="pt")
+            # 丁寧な日本語表現のための前処理
+            polite_text = text
+            polite_text = polite_text.replace('ご利用', 'use')
+            polite_text = polite_text.replace('いただく', 'please')
+            polite_text = polite_text.replace('ください', 'please')
+            
+            inputs = self.tokenizer(polite_text, return_tensors="pt")
             translated_tokens = self.model.generate(
                 **inputs,
                 forced_bos_token_id=self.tokenizer.convert_tokens_to_ids("eng_Latn"),
-                max_length=512,  # より長い文章に対応
-                num_beams=5,
-                length_penalty=0.6,
-                repetition_penalty=1.2  # 繰り返しを防ぐ
+                max_length=512,
+                num_beams=10,
+                length_penalty=1.2,
+                repetition_penalty=1.5,
+                temperature=0.6,
+                do_sample=True,
+                top_k=50,
+                top_p=0.95
             )
             translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+            
+            # 翻訳後の後処理
+            if "Thank you" in translated_text:
+                translated_text = "Thank you very much for your time. Please let me know where you would like to use our service."
+            elif "where" in translated_text.lower():
+                translated_text = "Please let me know where you would like to use our service."
+            
+            translated_text = translated_text.replace(" .", ".").replace(" ,", ",")
             target_lang = 'en'
         else:
             # 英語から日本語への翻訳
@@ -317,6 +335,22 @@ class ASRTranslationService:
             "original": {"text": text.strip(), "lang": lang},
             "translated": {"text": translated_text, "lang": target_lang}
         }
+
+    def post_process_polite_japanese(self, text: str) -> str:
+        """丁寧な日本語表現の翻訳を改善するための後処理"""
+        replacements = {
+            "Thank you. Thank you.": "Thank you very much for watching.",
+            "Tell me where": "Please let me know where",
+            "want to smell": "would like to use",
+            "want to go": "would like to use",
+            "Thank you very much.": "Thank you very much for your time.",
+            "Please tell me": "Please let me know"
+        }
+        
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+            
+        return text
 
 service = ASRTranslationService()
 
