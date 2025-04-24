@@ -1,28 +1,39 @@
 import asyncio
 import logging
 import numpy as np
+import os
+import torch
 from typing import List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-
-import whisper_cpp
+from faster_whisper import WhisperModel
 import silero_vad
 import ctranslate2
 import sentencepiece as spm
+import langdetect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+os.makedirs("models", exist_ok=True)
+
 class ASRTranslationService:
     def __init__(self):
         logger.info("ASRTranslationServiceを初期化中...")
-        self.vad = silero_vad.VAD(threshold=0.5, sampling_rate=16000)
-        self.asr = whisper_cpp.Model("models/ggml-small-q8_0.bin", n_threads=4)
-        self.ja_en_translator = ctranslate2.Translator("models/nllb-ja-en-q8_0")
-        self.en_ja_translator = ctranslate2.Translator("models/nllb-en-ja-q8_0")
+        self.vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
+                                              model='silero_vad',
+                                              force_reload=False)
+        self.vad_get_speech_timestamps = utils[0]
+        self.vad_threshold = 0.5
+        self.sample_rate = 16000
+        
+        self.asr = WhisperModel("small", device="cpu", compute_type="int8")
+        
+        self.ja_en_translator = ctranslate2.Translator("models/nllb-ja-en-q8_0", device="cpu")
+        self.en_ja_translator = ctranslate2.Translator("models/nllb-en-ja-q8_0", device="cpu")
         self.ja_tokenizer = spm.SentencePieceProcessor()
         self.en_tokenizer = spm.SentencePieceProcessor()
         self.ja_tokenizer.Load("models/ja.model")
@@ -30,13 +41,40 @@ class ASRTranslationService:
         logger.info("すべてのモデルを読み込みました")
 
     async def detect_speech(self, audio_data: np.ndarray) -> bool:
-        is_speech = self.vad.is_speech(audio_data)
-        return is_speech
+        tensor = torch.from_numpy(audio_data).float()
+        speech_timestamps = self.vad_get_speech_timestamps(
+            tensor, 
+            self.vad_model, 
+            threshold=self.vad_threshold,
+            sampling_rate=self.sample_rate
+        )
+        return len(speech_timestamps) > 0
 
     async def process_audio(self, audio_data: np.ndarray):
-        result = self.asr.transcribe(audio_data)
-        text = result['text']
-        lang = result['language']
+        segments, info = self.asr.transcribe(audio_data, beam_size=5)
+        segments_list = list(segments)  # イテレータをリストに変換
+        
+        if not segments_list:
+            return {
+                "original": {"text": "", "lang": "unknown"},
+                "translated": {"text": "", "lang": "unknown"}
+            }
+        
+        text = " ".join([segment.text for segment in segments_list])
+        detected_lang = info.language
+        
+        try:
+            if text.strip():
+                lang_detect_result = langdetect.detect(text)
+                if lang_detect_result in ['ja', 'jp']:
+                    lang = 'ja'
+                else:
+                    lang = 'en'
+            else:
+                lang = detected_lang if detected_lang in ['ja', 'en'] else 'en'
+        except:
+            lang = detected_lang if detected_lang in ['ja', 'en'] else 'en'
+        
         logger.info(f"認識結果: '{text}' (言語: {lang})")
         
         if lang == 'ja':
