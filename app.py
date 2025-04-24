@@ -3,10 +3,14 @@ import logging
 import numpy as np
 import os
 import torch
-from typing import List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import sys
+import requests
+import zipfile
+import io
+from typing import List, Optional
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from faster_whisper import WhisperModel
 import silero_vad
 import ctranslate2
@@ -20,9 +24,67 @@ app = FastAPI()
 
 os.makedirs("models", exist_ok=True)
 
+def download_file(url: str, save_path: str) -> None:
+    """ファイルをダウンロードして保存する"""
+    logger.info(f"ダウンロード中: {url}")
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+    
+    with open(save_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+    logger.info(f"ダウンロード完了: {save_path}")
+
+def download_and_extract_zip(url: str, extract_dir: str) -> None:
+    """ZIPファイルをダウンロードして展開する"""
+    logger.info(f"ZIPファイルをダウンロード中: {url}")
+    response = requests.get(url)
+    response.raise_for_status()
+    
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zip_ref:
+        zip_ref.extractall(extract_dir)
+    logger.info(f"ZIPファイルの展開完了: {extract_dir}")
+
+def download_models() -> None:
+    """必要なモデルをダウンロードする"""
+    try:
+        if not os.path.exists("models/ja.model"):
+            download_file("https://huggingface.co/models/ja.model", "models/ja.model")
+        if not os.path.exists("models/en.model"):
+            download_file("https://huggingface.co/models/en.model", "models/en.model")
+        
+        if not os.path.exists("models/nllb-ja-en-q8_0"):
+            os.makedirs("models/nllb-ja-en-q8_0", exist_ok=True)
+            download_and_extract_zip(
+                "https://huggingface.co/models/nllb-200-distilled-600M-ja-en-q8_0.zip", 
+                "models/nllb-ja-en-q8_0"
+            )
+        
+        if not os.path.exists("models/nllb-en-ja-q8_0"):
+            os.makedirs("models/nllb-en-ja-q8_0", exist_ok=True)
+            download_and_extract_zip(
+                "https://huggingface.co/models/nllb-200-distilled-600M-en-ja-q8_0.zip", 
+                "models/nllb-en-ja-q8_0"
+            )
+        
+        return True
+    except Exception as e:
+        logger.error(f"モデルのダウンロード中にエラーが発生しました: {e}")
+        return False
+
 class ASRTranslationService:
     def __init__(self):
         logger.info("ASRTranslationServiceを初期化中...")
+        
+        if not os.path.exists("models/nllb-ja-en-q8_0/model.bin") or \
+           not os.path.exists("models/nllb-en-ja-q8_0/model.bin") or \
+           not os.path.exists("models/ja.model") or \
+           not os.path.exists("models/en.model"):
+            logger.warning("必要なモデルファイルが見つかりません。自動ダウンロードを試みます...")
+            if not download_models():
+                logger.error("モデルのダウンロードに失敗しました。")
+                raise RuntimeError("必要なモデルファイルが見つかりません。")
+        
         self.vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
                                               model='silero_vad',
                                               force_reload=False)
@@ -32,13 +94,17 @@ class ASRTranslationService:
         
         self.asr = WhisperModel("small", device="cpu", compute_type="int8")
         
-        self.ja_en_translator = ctranslate2.Translator("models/nllb-ja-en-q8_0", device="cpu")
-        self.en_ja_translator = ctranslate2.Translator("models/nllb-en-ja-q8_0", device="cpu")
-        self.ja_tokenizer = spm.SentencePieceProcessor()
-        self.en_tokenizer = spm.SentencePieceProcessor()
-        self.ja_tokenizer.Load("models/ja.model")
-        self.en_tokenizer.Load("models/en.model")
-        logger.info("すべてのモデルを読み込みました")
+        try:
+            self.ja_en_translator = ctranslate2.Translator("models/nllb-ja-en-q8_0", device="cpu")
+            self.en_ja_translator = ctranslate2.Translator("models/nllb-en-ja-q8_0", device="cpu")
+            self.ja_tokenizer = spm.SentencePieceProcessor()
+            self.en_tokenizer = spm.SentencePieceProcessor()
+            self.ja_tokenizer.Load("models/ja.model")
+            self.en_tokenizer.Load("models/en.model")
+            logger.info("すべてのモデルを読み込みました")
+        except Exception as e:
+            logger.error(f"モデルの読み込み中にエラーが発生しました: {e}")
+            raise
 
     async def detect_speech(self, audio_data: np.ndarray) -> bool:
         tensor = torch.from_numpy(audio_data).float()
