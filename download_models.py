@@ -42,21 +42,21 @@ def download_models() -> None:
     
     try:
         if not os.path.exists(f"{MODELS_DIR}/ja.model"):
-            download_file("https://huggingface.co/models/ja.model", f"{MODELS_DIR}/ja.model")
+            download_file("https://huggingface.co/terisuke/local-translator/resolve/main/ja.model", f"{MODELS_DIR}/ja.model")
         if not os.path.exists(f"{MODELS_DIR}/en.model"):
-            download_file("https://huggingface.co/models/en.model", f"{MODELS_DIR}/en.model")
+            download_file("https://huggingface.co/terisuke/local-translator/resolve/main/en.model", f"{MODELS_DIR}/en.model")
         
         if not os.path.exists(f"{MODELS_DIR}/nllb-ja-en-q8_0"):
             os.makedirs(f"{MODELS_DIR}/nllb-ja-en-q8_0", exist_ok=True)
             download_and_extract_zip(
-                "https://huggingface.co/models/nllb-200-distilled-600M-ja-en-q8_0.zip", 
+                "https://huggingface.co/terisuke/local-translator/resolve/main/nllb-200-distilled-600M-ja-en-q8_0.zip", 
                 f"{MODELS_DIR}/nllb-ja-en-q8_0"
             )
         
         if not os.path.exists(f"{MODELS_DIR}/nllb-en-ja-q8_0"):
             os.makedirs(f"{MODELS_DIR}/nllb-en-ja-q8_0", exist_ok=True)
             download_and_extract_zip(
-                "https://huggingface.co/models/nllb-200-distilled-600M-en-ja-q8_0.zip", 
+                "https://huggingface.co/terisuke/local-translator/resolve/main/nllb-200-distilled-600M-en-ja-q8_0.zip", 
                 f"{MODELS_DIR}/nllb-en-ja-q8_0"
             )
         

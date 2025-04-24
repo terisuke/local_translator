@@ -17,24 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
 
-# ===== モデルステージ =====
-FROM python:3.11-slim AS models
-
-WORKDIR /app
-
-# モデルダウンロードに必要なパッケージをインストール
-RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
-
-# モデルダウンロードスクリプトをコピー
-COPY download_models.py .
-COPY requirements.txt .
-
-# 依存関係をインストール
-RUN pip install --no-cache-dir requests
-
-# モデルをダウンロード
-RUN python download_models.py
-
 # ===== 実行ステージ =====
 FROM python:3.11-slim
 
@@ -42,23 +24,25 @@ WORKDIR /app
 
 # 実行に必要なパッケージのみをインストール
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libopenblas-base \
+    libopenblas-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # ビルドステージから必要なものをコピー
 COPY --from=builder /app/wheels /wheels
-COPY --from=models /app/models /app/models
 
 # Python依存関係をインストール
 RUN pip install --no-cache-dir /wheels/*
 
 # アプリケーションコードをコピー
 COPY app.py .
-COPY download_models.py .
 COPY static/ ./static/
 
-# モデルディレクトリの作成
-RUN mkdir -p models
+# モデルディレクトリをコピー
+COPY models/ ./models/
+
+# 環境変数ファイルをコピー
+COPY .env .
 
 # 非rootユーザーで実行
 RUN useradd -m appuser && \

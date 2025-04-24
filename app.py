@@ -110,7 +110,8 @@ class ASRTranslationService:
         # VADモデルの初期化
         self.vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
                                               model='silero_vad',
-                                              force_reload=False)
+                                              force_reload=False,
+                                              trust_repo=True)
         self.vad_get_speech_timestamps = utils[0]
         self.vad_threshold = 0.5
         self.sample_rate = 16000
@@ -134,8 +135,8 @@ class ASRTranslationService:
         self.sentence_end_pattern = re.compile(r'[.。!！?？]\s*')
         
         # NLLBモデルの初期化
-        self.model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
-        self.tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
+        self.model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M", trust_repo=True)
+        self.tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", trust_repo=True)
         self.model.eval()
         logger.info("すべてのモデルを読み込みました")
 
@@ -297,14 +298,15 @@ class ASRTranslationService:
             translated_tokens = self.model.generate(
                 **inputs,
                 forced_bos_token_id=self.tokenizer.convert_tokens_to_ids("eng_Latn"),
-                max_length=512,
-                num_beams=10,
-                length_penalty=1.2,
-                repetition_penalty=1.5,
-                temperature=0.6,
+                max_length=256,  # 最大長を制限
+                num_beams=5,     # ビーム数を減らす
+                length_penalty=1.0,  # 長さのペナルティを調整
+                repetition_penalty=1.2,  # 繰り返しのペナルティを調整
+                temperature=0.7,  # 温度を調整
                 do_sample=True,
                 top_k=50,
-                top_p=0.95
+                top_p=0.9,
+                no_repeat_ngram_size=3  # n-gramの繰り返しを防ぐ
             )
             translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
             
@@ -322,10 +324,15 @@ class ASRTranslationService:
             translated_tokens = self.model.generate(
                 **inputs,
                 forced_bos_token_id=self.tokenizer.convert_tokens_to_ids("jpn_Jpan"),
-                max_length=512,
-                num_beams=5,
-                length_penalty=0.6,
-                repetition_penalty=1.2
+                max_length=256,  # 最大長を制限
+                num_beams=5,     # ビーム数を減らす
+                length_penalty=1.0,  # 長さのペナルティを調整
+                repetition_penalty=1.2,  # 繰り返しのペナルティを調整
+                temperature=0.7,  # 温度を調整
+                do_sample=True,
+                top_k=50,
+                top_p=0.9,
+                no_repeat_ngram_size=3  # n-gramの繰り返しを防ぐ
             )
             translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
             target_lang = 'ja'
