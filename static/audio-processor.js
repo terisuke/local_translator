@@ -1,28 +1,34 @@
 class AudioProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.bufferSize = 8192;  // バッファサイズ（0.5秒分のデータ）
+        this.bufferSize = 16000 * 2; // 2秒分のバッファ
         this.buffer = new Float32Array(this.bufferSize);
         this.bufferIndex = 0;
+        this.lastProcessFrame = 0;
+        this.processIntervalFrames = 2 * sampleRate; // 2秒分のフレーム数
     }
-    
-    process(inputs, outputs, parameters) {
+
+    process(inputs, outputs, parameters, currentFrame) {
         const input = inputs[0];
-        const channel = input[0];
+        if (!input || !input[0]) return true;
 
-        if (!channel) return true;
-
-        // バッファにデータを追加
-        for (let i = 0; i < channel.length; i++) {
-            this.buffer[this.bufferIndex] = channel[i];
-            this.bufferIndex++;
-
-            // バッファが一杯になったら送信
-            if (this.bufferIndex >= this.bufferSize) {
-                this.port.postMessage(this.buffer.buffer);
-                this.buffer = new Float32Array(this.bufferSize);
-                this.bufferIndex = 0;
+        // 入力データをバッファに追加
+        const inputData = input[0];
+        for (let i = 0; i < inputData.length; i++) {
+            if (this.bufferIndex < this.bufferSize) {
+                this.buffer[this.bufferIndex++] = inputData[i];
             }
+        }
+
+        // バッファが満杯になった場合に処理を実行
+        if (this.bufferIndex >= this.bufferSize) {
+            // バッファの内容を送信
+            const audioData = this.buffer.slice(0, this.bufferIndex);
+            this.port.postMessage(audioData.buffer, [audioData.buffer]);
+
+            // バッファをリセット
+            this.buffer = new Float32Array(this.bufferSize);
+            this.bufferIndex = 0;
         }
 
         return true;
