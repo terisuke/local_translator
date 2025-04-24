@@ -9,4 +9,5 @@ sentencepiece>=0.1.99
 python-multipart>=0.0.6
 torch>=2.2.0
 transformers>=4.40.0
-langdetect>=1.0.9    
+langdetect>=1.0.9
+python-dotenv>=1.0.0    

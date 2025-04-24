@@ -144,25 +144,52 @@
             // 録音開始
             async function startRecording() {
                 try {
+                    // メディアデバイスのサポートチェック
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        const error = new Error('お使いのブラウザはマイクをサポートしていません。');
+                        statusEl.textContent = error.message;
+                        throw error;
+                    }
+
                     audioContext = new (window.AudioContext || window.webkitAudioContext)({
                         sampleRate: 16000
                     });
                     
-                    // AudioWorkletを使用（最新のWeb Audio API）
-                    await audioContext.audioWorklet.addModule('/static/audio-processor.js');
+                    // AudioWorkletのサポートチェックとフォールバック
+                    if (audioContext.audioWorklet) {
+                        try {
+                            await audioContext.audioWorklet.addModule('/static/audio-processor.js');
+                            // AudioWorkletを使用
+                            audioWorklet = new AudioWorkletNode(audioContext, 'audio-processor');
+                        } catch (err) {
+                            console.error('AudioWorkletの読み込みに失敗:', err);
+                            // ScriptProcessorNodeにフォールバック
+                            await useScriptProcessor();
+                            return;
+                        }
+                    } else {
+                        console.log('AudioWorkletがサポートされていません。ScriptProcessorNodeを使用します。');
+                        await useScriptProcessor();
+                        return;
+                    }
                     
                     // マイクからの入力を取得
-                    microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    const source = audioContext.createMediaStreamSource(microphone);
+                    microphone = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
                     
                     // AudioWorkletを接続
-                    audioWorklet = new AudioWorkletNode(audioContext, 'audio-processor');
                     audioWorklet.port.onmessage = (event) => {
                         if (websocket && websocket.readyState === WebSocket.OPEN) {
                             websocket.send(event.data);
                         }
                     };
                     
+                    const source = audioContext.createMediaStreamSource(microphone);
                     source.connect(audioWorklet);
                     audioWorklet.connect(audioContext.destination);
                     
@@ -173,6 +200,39 @@
                     
                 } catch (err) {
                     console.error('録音開始エラー:', err);
+                    statusEl.textContent = `エラー: ${err.message}`;
+                }
+            }
+            
+            // ScriptProcessorNodeを使用する関数
+            async function useScriptProcessor() {
+                try {
+                    // マイクからの入力を取得
+                    microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const source = audioContext.createMediaStreamSource(microphone);
+                    
+                    // ScriptProcessorNodeを作成
+                    const bufferSize = 8192;
+                    const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+                    
+                    processor.onaudioprocess = (e) => {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        if (websocket && websocket.readyState === WebSocket.OPEN) {
+                            websocket.send(inputData.buffer);
+                        }
+                    };
+                    
+                    source.connect(processor);
+                    processor.connect(audioContext.destination);
+                    
+                    audioWorklet = processor; // 停止時に使用
+                    
+                    isRecording = true;
+                    statusEl.textContent = '録音中... (レガシーモード)';
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                } catch (err) {
+                    console.error('ScriptProcessor初期化エラー:', err);
                     statusEl.textContent = `エラー: ${err.message}`;
                 }
             }

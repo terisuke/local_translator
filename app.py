@@ -13,21 +13,27 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from faster_whisper import WhisperModel
 import silero_vad
-import ctranslate2
-import sentencepiece as spm
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 import langdetect
+from dotenv import load_dotenv
 
+# ロガーの設定
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# 環境変数を読み込む
+load_dotenv()
+token = os.getenv("HUGGING_FACE_HUB_TOKEN")
+logger.info(f"Hugging Face Token: {'設定されています' if token else '設定されていません'}")
 
 app = FastAPI()
 
 os.makedirs("models", exist_ok=True)
 
-def download_file(url: str, save_path: str) -> None:
+def download_file(url: str, save_path: str, headers: dict = None) -> None:
     """ファイルをダウンロードして保存する"""
     logger.info(f"ダウンロード中: {url}")
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, headers=headers)
     response.raise_for_status()
     
     with open(save_path, 'wb') as f:
@@ -35,10 +41,10 @@ def download_file(url: str, save_path: str) -> None:
             f.write(chunk)
     logger.info(f"ダウンロード完了: {save_path}")
 
-def download_and_extract_zip(url: str, extract_dir: str) -> None:
+def download_and_extract_zip(url: str, extract_dir: str, headers: dict = None) -> None:
     """ZIPファイルをダウンロードして展開する"""
     logger.info(f"ZIPファイルをダウンロード中: {url}")
-    response = requests.get(url)
+    response = requests.get(url, headers=headers)
     response.raise_for_status()
     
     with zipfile.ZipFile(io.BytesIO(response.content)) as zip_ref:
@@ -48,23 +54,43 @@ def download_and_extract_zip(url: str, extract_dir: str) -> None:
 def download_models() -> None:
     """必要なモデルをダウンロードする"""
     try:
+        # Hugging Faceのトークンを取得
+        token = os.getenv("HUGGING_FACE_HUB_TOKEN")
+        if not token:
+            raise ValueError("HUGGING_FACE_HUB_TOKENが設定されていません。")
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
+        }
+
         if not os.path.exists("models/ja.model"):
-            download_file("https://huggingface.co/models/ja.model", "models/ja.model")
+            download_file(
+                "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/main/sentencepiece.bpe.model",
+                "models/ja.model",
+                headers=headers
+            )
         if not os.path.exists("models/en.model"):
-            download_file("https://huggingface.co/models/en.model", "models/en.model")
+            download_file(
+                "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/main/sentencepiece.bpe.model",
+                "models/en.model",
+                headers=headers
+            )
         
         if not os.path.exists("models/nllb-ja-en-q8_0"):
             os.makedirs("models/nllb-ja-en-q8_0", exist_ok=True)
             download_and_extract_zip(
-                "https://huggingface.co/models/nllb-200-distilled-600M-ja-en-q8_0.zip", 
-                "models/nllb-ja-en-q8_0"
+                "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/main/pytorch_model.bin",
+                "models/nllb-ja-en-q8_0",
+                headers=headers
             )
         
         if not os.path.exists("models/nllb-en-ja-q8_0"):
             os.makedirs("models/nllb-en-ja-q8_0", exist_ok=True)
             download_and_extract_zip(
-                "https://huggingface.co/models/nllb-200-distilled-600M-en-ja-q8_0.zip", 
-                "models/nllb-en-ja-q8_0"
+                "https://huggingface.co/facebook/nllb-200-distilled-600M/resolve/main/pytorch_model.bin",
+                "models/nllb-en-ja-q8_0",
+                headers=headers
             )
         
         return True
@@ -76,15 +102,10 @@ class ASRTranslationService:
     def __init__(self):
         logger.info("ASRTranslationServiceを初期化中...")
         
-        if not os.path.exists("models/nllb-ja-en-q8_0/model.bin") or \
-           not os.path.exists("models/nllb-en-ja-q8_0/model.bin") or \
-           not os.path.exists("models/ja.model") or \
-           not os.path.exists("models/en.model"):
-            logger.warning("必要なモデルファイルが見つかりません。自動ダウンロードを試みます...")
-            if not download_models():
-                logger.error("モデルのダウンロードに失敗しました。")
-                raise RuntimeError("必要なモデルファイルが見つかりません。")
+        # Whisperモデルの初期化
+        self.asr = WhisperModel("small", device="cpu", compute_type="int8")
         
+        # VADモデルの初期化
         self.vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
                                               model='silero_vad',
                                               force_reload=False)
@@ -92,19 +113,11 @@ class ASRTranslationService:
         self.vad_threshold = 0.5
         self.sample_rate = 16000
         
-        self.asr = WhisperModel("small", device="cpu", compute_type="int8")
-        
-        try:
-            self.ja_en_translator = ctranslate2.Translator("models/nllb-ja-en-q8_0", device="cpu")
-            self.en_ja_translator = ctranslate2.Translator("models/nllb-en-ja-q8_0", device="cpu")
-            self.ja_tokenizer = spm.SentencePieceProcessor()
-            self.en_tokenizer = spm.SentencePieceProcessor()
-            self.ja_tokenizer.Load("models/ja.model")
-            self.en_tokenizer.Load("models/en.model")
-            logger.info("すべてのモデルを読み込みました")
-        except Exception as e:
-            logger.error(f"モデルの読み込み中にエラーが発生しました: {e}")
-            raise
+        # NLLBモデルの初期化
+        self.model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+        self.tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
+        self.model.eval()
+        logger.info("すべてのモデルを読み込みました")
 
     async def detect_speech(self, audio_data: np.ndarray) -> bool:
         tensor = torch.from_numpy(audio_data).float()
@@ -144,14 +157,24 @@ class ASRTranslationService:
         logger.info(f"認識結果: '{text}' (言語: {lang})")
         
         if lang == 'ja':
-            tokens = self.ja_tokenizer.encode(text, out_type=str)
-            translated_tokens = self.ja_en_translator.translate_batch([tokens])[0][0]
-            translated_text = self.en_tokenizer.decode(translated_tokens)
+            # 日本語から英語への翻訳
+            inputs = self.tokenizer(text, return_tensors="pt")
+            translated_tokens = self.model.generate(
+                **inputs,
+                forced_bos_token_id=self.tokenizer.lang_code_to_id["eng_Latn"],
+                max_length=128
+            )
+            translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
             target_lang = 'en'
         else:
-            tokens = self.en_tokenizer.encode(text, out_type=str)
-            translated_tokens = self.en_ja_translator.translate_batch([tokens])[0][0]
-            translated_text = self.ja_tokenizer.decode(translated_tokens)
+            # 英語から日本語への翻訳
+            inputs = self.tokenizer(text, return_tensors="pt")
+            translated_tokens = self.model.generate(
+                **inputs,
+                forced_bos_token_id=self.tokenizer.lang_code_to_id["jpn_Jpan"],
+                max_length=128
+            )
+            translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
             target_lang = 'ja'
             
         logger.info(f"翻訳結果: '{translated_text}' (言語: {target_lang})")

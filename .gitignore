@@ -3,6 +3,9 @@
 venv/
 ENV/
 
+# 環境変数
+.env
+
 # Pythonバイトコード
 __pycache__/
 *.py[cod]
