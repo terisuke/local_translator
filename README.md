@@ -1,14 +1,16 @@
-# リアルタイム日英翻訳アプリ
+# リアルタイム日英翻訳ウェブアプリ
 
-ローカル環境で動作する日英双方向リアルタイム音声翻訳アプリケーション
+ローカル環境で動作する日英双方向リアルタイム音声翻訳ウェブアプリケーション
 
 ## 機能
 
 - リアルタイム音声認識（ASR）
 - 日英双方向翻訳
 - 音声活動検出（VAD）
-- GUI/CLIインターフェース
+- Webインターフェース
+- WebSocketによるリアルタイム通信
 - オフライン動作
+- Dockerコンテナ対応
 
 ## システム要件
 
@@ -30,10 +32,24 @@
 
 ## インストール
 
+### Dockerを使用する場合
+
+```bash
+# Dockerイメージをビルド
+docker build -t local-translator .
+
+# Dockerコンテナを実行
+docker run -p 8000:8000 local-translator
+```
+
+ブラウザで http://localhost:8000 にアクセスしてアプリケーションを使用できます。
+
+### 直接インストールする場合
+
 ```bash
 # リポジトリのクローン
-git clone https://github.com/<org>/jp-en-rt-translator.git
-cd jp-en-rt-translator
+git clone https://github.com/terisuke/local_translator.git
+cd local_translator
 
 # 仮想環境の作成と有効化
 python -m venv .venv
@@ -41,18 +57,19 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 # 依存関係のインストール
 pip install -r requirements.txt
+
+# アプリケーションの起動
+uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-## 使用方法
+## 技術スタック
 
-```bash
-# GUIモードで起動
-python src/app.py
-
-# CLIモードで起動
-python src/app.py --cli
-```
+- **音声認識**: Whisper.cpp + Silero VAD
+- **機械翻訳**: CTranslate2 + NLLB-200
+- **バックエンド**: FastAPI + Uvicorn
+- **リアルタイム通信**: WebSockets
+- **フロントエンド音声処理**: Web Audio API + AudioWorkletNode
 
 ## ライセンス
 
-MIT License 
+MIT License    
