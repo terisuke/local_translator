@@ -15,8 +15,7 @@ class VAD:
         # モデルの初期化
         self.model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
                                          model='silero_vad',
-                                         force_reload=True,
-                                         trust_repo=True)
+                                         force_reload=True)
         self.model.eval()
 
         self.logger = logging.getLogger(__name__)

@@ -32,6 +32,25 @@
 
 ## インストール
 
+### Dockerイメージを使用する場合（推奨）
+
+```bash
+# Dockerイメージのプル
+docker pull terisuke/local-translator:latest
+
+# 環境変数ファイルの作成
+cp .env.example .env
+
+# Hugging Face APIトークンの設定
+# https://huggingface.co/settings/tokens からトークンを取得
+echo "HUGGING_FACE_HUB_TOKEN=your_token_here" >> .env
+
+# Dockerコンテナの実行
+docker run --env-file .env -p 8000:8000 terisuke/local-translator:latest
+```
+
+ブラウザで http://localhost:8000 にアクセスしてアプリケーションを使用できます。
+
 ### 環境変数の設定
 
 ```bash
@@ -42,18 +61,6 @@ cp .env.example .env
 # https://huggingface.co/settings/tokens からトークンを取得
 echo "HUGGING_FACE_HUB_TOKEN=your_token_here" >> .env
 ```
-
-### Dockerを使用する場合
-
-```bash
-# Dockerイメージをビルド
-docker build -t local-translator .
-
-# Dockerコンテナを実行（環境変数ファイルを指定）
-docker run --env-file .env -p 8000:8000 local-translator
-```
-
-ブラウザで http://localhost:8000 にアクセスしてアプリケーションを使用できます。
 
 ### 直接インストールする場合
 

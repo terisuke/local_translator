@@ -135,7 +135,7 @@ class ASRTranslationService:
         self.sentence_end_pattern = re.compile(r'[.。!！?？]\s*')
         
         # NLLBモデルの初期化
-        self.model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M", trust_repo=True)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
         self.tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M", trust_repo=True)
         self.model.eval()
         logger.info("すべてのモデルを読み込みました")
@@ -324,17 +324,24 @@ class ASRTranslationService:
             translated_tokens = self.model.generate(
                 **inputs,
                 forced_bos_token_id=self.tokenizer.convert_tokens_to_ids("jpn_Jpan"),
-                max_length=256,  # 最大長を制限
-                num_beams=5,     # ビーム数を減らす
-                length_penalty=1.0,  # 長さのペナルティを調整
-                repetition_penalty=1.2,  # 繰り返しのペナルティを調整
-                temperature=0.7,  # 温度を調整
+                max_length=384,  # 日本語はより長い翻訳が必要な場合があるため、長めに設定
+                num_beams=8,     # 日本語の翻訳品質を維持するため、ビーム数を増やす
+                length_penalty=0.8,  # 日本語の翻訳では少し短めのペナルティ
+                repetition_penalty=1.3,  # 繰り返しのペナルティを強めに
+                temperature=0.6,  # より決定論的な翻訳を生成
                 do_sample=True,
-                top_k=50,
-                top_p=0.9,
-                no_repeat_ngram_size=3  # n-gramの繰り返しを防ぐ
+                top_k=40,
+                top_p=0.85,
+                no_repeat_ngram_size=2  # 日本語では2-gramの繰り返しを防ぐ
             )
             translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+            
+            # 日本語の翻訳後の後処理
+            translated_text = translated_text.replace(" 。", "。").replace(" 、", "、")
+            translated_text = translated_text.replace(" ！", "！").replace(" ？", "？")
+            translated_text = translated_text.replace("（", "(").replace("）", ")")
+            translated_text = translated_text.replace("「", "").replace("」", "")
+            
             target_lang = 'ja'
             
         logger.info(f"翻訳結果: '{translated_text}' (言語: {target_lang})")
