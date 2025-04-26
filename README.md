@@ -30,6 +30,27 @@
 - GPU: RTX 4070 8GB / Apple M3 Max 38C
 - ストレージ: 30GB
 
+## システムアーキテクチャ
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant Browser as ブラウザ
+    participant WebSocket as WebSocket
+    participant ASR as 音声認識
+    participant VAD as 音声活動検出
+    participant Translator as 翻訳エンジン
+    
+    User->>Browser: 音声入力開始
+    Browser->>WebSocket: 音声データ送信
+    WebSocket->>VAD: 音声活動検出
+    VAD->>ASR: 音声認識リクエスト
+    ASR->>Translator: テキスト翻訳
+    Translator->>WebSocket: 翻訳結果
+    WebSocket->>Browser: 翻訳テキスト表示
+    Browser->>User: 翻訳結果の表示
+```
+
 ## インストール
 
 ### Dockerイメージを使用する場合（推奨）
