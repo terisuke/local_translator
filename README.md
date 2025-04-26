@@ -103,8 +103,12 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ## 技術スタック
 
-- **音声認識**: Faster Whisper + Silero VAD
-- **機械翻訳**: Hugging Face Transformers (NLLB-200)
+- **音声認識**: 
+  - Faster Whisper (small)
+  - Silero VAD (音声活動検出)
+- **機械翻訳**: 
+  - NLLB-200-distilled-600M (日英双方向翻訳)
+  - SentencePiece (トークナイザー)
 - **バックエンド**: FastAPI + Uvicorn
 - **リアルタイム通信**: WebSockets
 - **フロントエンド音声処理**: Web Audio API + AudioWorkletNode
